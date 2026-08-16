@@ -4,8 +4,8 @@
 #![reexport_test_harness_main = "test_main"]
 #![test_runner(cat_os::test_runner)]
 
-use core::panic::PanicInfo;
 use cat_os::println;
+use core::panic::PanicInfo;
 
 #[unsafe(no_mangle)] // don't mangle the name of this function
 pub extern "C" fn _start() -> ! {
@@ -14,12 +14,10 @@ pub extern "C" fn _start() -> ! {
     loop {}
 }
 
-
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     cat_os::test_panic_handler(info)
 }
-
 
 #[test_case]
 fn test_println() {
