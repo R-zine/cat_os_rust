@@ -21,9 +21,10 @@ fn main(boot_info: &'static BootInfo) -> ! {
     let mut mapper = unsafe { memory::init(phys_mem_offset) };
     let mut frame_allocator = unsafe { BootInfoFrameAllocator::init(&boot_info.memory_map) };
     allocator::init_heap(&mut mapper, &mut frame_allocator).expect("heap initialization failed");
+    cat_os::enable_hardware_interrupts();
 
     test_main();
-    loop {}
+    cat_os::hlt_loop();
 }
 
 #[panic_handler]
@@ -71,4 +72,61 @@ fn many_boxes_long_lived() {
         assert_eq!(*x, i);
     }
     assert_eq!(*long_lived, 1);
+}
+
+use alloc::sync::Arc;
+use cat_os::task::{
+    Task,
+    executor::{Executor, MAX_TASKS, SpawnError},
+};
+use core::future::Future;
+use core::pin::Pin;
+use core::sync::atomic::{AtomicUsize, Ordering};
+use core::task::{Context, Poll};
+
+struct WakeStorm {
+    poll_count: Arc<AtomicUsize>,
+}
+
+impl Future for WakeStorm {
+    type Output = ();
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        if self.poll_count.fetch_add(1, Ordering::Relaxed) == 0 {
+            for _ in 0..1_000 {
+                cx.waker().wake_by_ref();
+            }
+            Poll::Pending
+        } else {
+            Poll::Ready(())
+        }
+    }
+}
+
+#[test_case]
+fn executor_coalesces_duplicate_wakes() {
+    let poll_count = Arc::new(AtomicUsize::new(0));
+    let mut executor = Executor::new();
+    executor
+        .spawn(Task::new(WakeStorm {
+            poll_count: poll_count.clone(),
+        }))
+        .expect("task should fit in the executor");
+
+    executor.run_until_stalled();
+
+    assert_eq!(poll_count.load(Ordering::Relaxed), 2);
+}
+
+#[test_case]
+fn executor_reports_task_limit() {
+    let mut executor = Executor::new();
+    for _ in 0..MAX_TASKS {
+        assert_eq!(executor.spawn(Task::new(core::future::pending())), Ok(()));
+    }
+
+    assert_eq!(
+        executor.spawn(Task::new(core::future::pending())),
+        Err(SpawnError::TaskLimitReached)
+    );
 }

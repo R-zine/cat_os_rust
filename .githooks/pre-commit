@@ -1,0 +1,28 @@
+#!/bin/sh
+
+set -eu
+
+repository_root=$(git rev-parse --show-toplevel)
+cd "$repository_root"
+
+# Do not allow compiler or rustdoc warnings in any command below. Appending
+# these flags ensures they take precedence over a less strict caller setting.
+export RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }-D warnings"
+export RUSTDOCFLAGS="${RUSTDOCFLAGS:+$RUSTDOCFLAGS }-D warnings"
+
+run_check() {
+    printf '\n==> %s\n' "$1"
+    shift
+    "$@"
+}
+
+run_check "Checking formatting" \
+    cargo fmt --all -- --check
+
+run_check "Running Clippy with all warnings denied" \
+    cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+
+run_check "Running the complete test suite" \
+    cargo test --workspace --all-features --locked
+
+printf '\nAll pre-commit checks passed.\n'

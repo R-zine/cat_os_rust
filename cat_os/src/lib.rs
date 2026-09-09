@@ -27,6 +27,13 @@ pub fn init() {
     gdt::init();
     interrupts::init_idt();
     unsafe { interrupts::PICS.lock().initialize() };
+}
+
+/// Initializes interrupt-backed devices and enables hardware interrupts.
+///
+/// The heap must be initialized before calling this function.
+pub fn enable_hardware_interrupts() {
+    task::keyboard::init();
     x86_64::instructions::interrupts::enable();
 }
 
@@ -67,8 +74,16 @@ pub fn test_panic_handler(info: &PanicInfo) -> ! {
 
 /// Entry point for `cargo test`
 #[cfg(test)]
-fn test_kernel_main(_boot_info: &'static BootInfo) -> ! {
+fn test_kernel_main(boot_info: &'static BootInfo) -> ! {
     init();
+
+    let phys_mem_offset = x86_64::VirtAddr::new(boot_info.physical_memory_offset);
+    let mut mapper = unsafe { memory::init(phys_mem_offset) };
+    let mut frame_allocator =
+        unsafe { memory::BootInfoFrameAllocator::init(&boot_info.memory_map) };
+    allocator::init_heap(&mut mapper, &mut frame_allocator).expect("heap initialization failed");
+
+    enable_hardware_interrupts();
     test_main();
     hlt_loop()
 }

@@ -1,6 +1,6 @@
 use crate::gdt;
-use crate::print;
 use crate::println;
+use core::sync::atomic::{AtomicU64, Ordering};
 use lazy_static::lazy_static;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame};
 
@@ -28,6 +28,7 @@ lazy_static! {
 
 pub const PIC_1_OFFSET: u8 = 32;
 pub const PIC_2_OFFSET: u8 = PIC_1_OFFSET + 8;
+static TIMER_TICKS: AtomicU64 = AtomicU64::new(0);
 
 pub static PICS: spin::Mutex<ChainedPics> =
     spin::Mutex::new(unsafe { ChainedPics::new(PIC_1_OFFSET, PIC_2_OFFSET) });
@@ -74,12 +75,17 @@ impl InterruptIndex {
 }
 
 extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFrame) {
-    print!(".");
+    TIMER_TICKS.fetch_add(1, Ordering::Relaxed);
 
     unsafe {
         PICS.lock()
             .notify_end_of_interrupt(InterruptIndex::Timer.as_u8());
     }
+}
+
+/// Returns the number of timer interrupts handled since initialization.
+pub fn timer_ticks() -> u64 {
+    TIMER_TICKS.load(Ordering::Relaxed)
 }
 
 extern "x86-interrupt" fn page_fault_handler(

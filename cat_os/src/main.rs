@@ -1,8 +1,5 @@
 #![no_std]
 #![no_main]
-#![feature(custom_test_frameworks)]
-#![test_runner(cat_os::test_runner)]
-#![reexport_test_harness_main = "test_main"]
 
 extern crate alloc;
 
@@ -37,6 +34,7 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     let mut frame_allocator = unsafe { BootInfoFrameAllocator::init(&boot_info.memory_map) };
 
     allocator::init_heap(&mut mapper, &mut frame_allocator).expect("heap initialization failed");
+    cat_os::enable_hardware_interrupts();
 
     let heap_value = Box::new(41);
     println!("heap_value at {:p}", heap_value);
@@ -62,28 +60,19 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     );
 
     let mut executor = Executor::new();
-    executor.spawn(Task::new(example_task()));
-    executor.spawn(Task::new(keyboard::print_keypresses())); // new
+    executor
+        .spawn(Task::new(example_task()))
+        .expect("failed to spawn example task");
+    executor
+        .spawn(Task::new(keyboard::print_keypresses()))
+        .expect("failed to spawn keyboard task");
     executor.run();
-
-    #[cfg(test)]
-    test_main();
-
-    println!("It did not crash!");
-    cat_os::hlt_loop();
 }
 
 /// This function is called on panic.
-#[cfg(not(test))]
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     println!("{}", info);
 
     cat_os::hlt_loop();
-}
-
-#[cfg(test)]
-#[panic_handler]
-fn panic(info: &PanicInfo) -> ! {
-    cat_os::test_panic_handler(info)
 }

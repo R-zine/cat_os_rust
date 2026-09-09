@@ -1,0 +1,3 @@
+[workspace]
+members = ["cat_os"]
+resolver = "3"
